@@ -479,7 +479,7 @@ void imgui_md::render_text(const char* str, const char* str_end)
 		if (!m_href.empty()) {
 
 			ImVec4 c;
-			if (ImGui::IsItemHovered()) {
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
 
 				ImGui::SetTooltip("%s", m_href.c_str());
 
