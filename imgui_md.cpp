@@ -826,8 +826,10 @@ int imgui_md::print(const char* str, const char* str_end)
 	if (str >= str_end)
         return 0;
 
-    // Markdown rendering always start with a call to ImGui::NewLine()
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetFontSize() - ImGui::GetStyle().FramePadding.y);
+    // Markdown rendering always starts with a call to ImGui::NewLine(),
+    // which advances Y by FontSize + ItemSpacing.y. Pre-compensate for that.
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetFontSize() - ImGui::GetStyle().ItemSpacing.y);
+
 	return md_parse(str, (MD_SIZE)(str_end - str), &m_md, this);
 }
 
