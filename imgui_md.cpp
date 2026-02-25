@@ -28,6 +28,15 @@
 #include <cassert>
 
 
+// Text-appropriate vertical spacing between markdown blocks.
+// Unlike NewLine() which adds a full FontSize (widget-oriented),
+// this adds a fraction of FontSize for tighter text layout.
+static void MdNewLine()
+{
+	ImGui::Dummy(ImVec2(0.0f, ImGui::GetFontSize() * 0.3f));
+}
+
+
 imgui_md::imgui_md()
 {
 	m_md.abi_version = 0;
@@ -70,7 +79,7 @@ void imgui_md::BLOCK_UL(const MD_BLOCK_UL_DETAIL* d, bool e)
 		m_list_stack.push_back(list_info{ 0, d->mark, false });
 	} else {
 		m_list_stack.pop_back();
-		if (m_list_stack.empty())ImGui::NewLine();
+		if (m_list_stack.empty()) MdNewLine();
 	}
 }
 
@@ -80,14 +89,14 @@ void imgui_md::BLOCK_OL(const MD_BLOCK_OL_DETAIL* d, bool e)
 		m_list_stack.push_back(list_info{ d->start, d->mark_delimiter, true });
 	} else {
 		m_list_stack.pop_back();
-		if (m_list_stack.empty())ImGui::NewLine();
+		if (m_list_stack.empty()) MdNewLine();
 	}
 }
 
 void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL*, bool e)
 {
 	if (e) {
-		ImGui::NewLine();
+		MdNewLine();
 
 		list_info& nfo = m_list_stack.back();
 		if (nfo.is_ol) {
@@ -114,7 +123,7 @@ void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL*, bool e)
 void imgui_md::BLOCK_HR(bool e)
 {
 	if (!e) {
-		ImGui::NewLine();
+		MdNewLine();
 		ImGui::Separator();
 
 	}
@@ -124,7 +133,7 @@ void imgui_md::BLOCK_H(const MD_BLOCK_H_DETAIL* d, bool e)
 {
 	if (e) {
 		m_hlevel = d->level;
-		ImGui::NewLine();
+		MdNewLine();
 	} else {
 		m_hlevel = 0;
 	}
@@ -133,7 +142,7 @@ void imgui_md::BLOCK_H(const MD_BLOCK_H_DETAIL* d, bool e)
 
 	if (!e) {
 		if (d->level <= 2) {
-			ImGui::NewLine();
+			MdNewLine();
 			ImGui::Separator();
 		}
 	}
@@ -180,7 +189,7 @@ void imgui_md::BLOCK_HTML(bool)
 void imgui_md::BLOCK_P(bool)
 {
 	if (!m_list_stack.empty())return;
-	ImGui::NewLine();
+	MdNewLine();
 }
 
 void imgui_md::BLOCK_TABLE(const MD_BLOCK_TABLE_DETAIL*, bool e)
@@ -826,9 +835,9 @@ int imgui_md::print(const char* str, const char* str_end)
 	if (str >= str_end)
         return 0;
 
-    // Markdown rendering always starts with a call to ImGui::NewLine(),
-    // which advances Y by FontSize + ItemSpacing.y. Pre-compensate for that.
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetFontSize() - ImGui::GetStyle().ItemSpacing.y);
+    // Markdown rendering always starts with MdNewLine() (via BLOCK_P or BLOCK_H),
+    // which advances Y by FontSize*0.3 + ItemSpacing.y. Pre-compensate for that.
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetFontSize() * 0.3f - ImGui::GetStyle().ItemSpacing.y);
 
 	return md_parse(str, (MD_SIZE)(str_end - str), &m_md, this);
 }
