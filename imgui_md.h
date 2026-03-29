@@ -134,6 +134,8 @@ protected:
 	bool m_is_image = false;
 	bool m_is_code = false; // true for block code and inline code
     bool m_is_code_block = false;
+	int m_quote_depth = 0;
+	std::vector<float> m_quote_start_y;
     std::string m_code_block_language;
     std::string m_code_block;
 	unsigned m_hlevel=0;//0 - no heading

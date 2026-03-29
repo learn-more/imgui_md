@@ -153,9 +153,32 @@ void imgui_md::BLOCK_DOC(bool)
 
 }
 
-void imgui_md::BLOCK_QUOTE(bool)
+void imgui_md::BLOCK_QUOTE(bool e)
 {
-
+	if (e) {
+		m_quote_depth++;
+		MdNewLine();
+		ImGui::Indent();
+		// Remember the Y position before the quote content
+		m_quote_start_y.push_back(ImGui::GetCursorScreenPos().y);
+	} else {
+		// Draw a vertical bar on the left side of the quote
+		if (!m_quote_start_y.empty()) {
+			float start_y = m_quote_start_y.back();
+			m_quote_start_y.pop_back();
+			float end_y = ImGui::GetCursorScreenPos().y;
+			float bar_x = ImGui::GetCursorScreenPos().x - ImGui::GetStyle().IndentSpacing * 0.5f;
+			float thickness = 2.0f;
+			ImColor bar_color = ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
+			ImGui::GetWindowDrawList()->AddLine(
+				ImVec2(bar_x, start_y), ImVec2(bar_x, end_y),
+				bar_color, thickness);
+		}
+		ImGui::Unindent();
+		m_quote_depth--;
+		if (m_quote_depth == 0)
+			MdNewLine();
+	}
 }
 
 
