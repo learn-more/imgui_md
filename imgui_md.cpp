@@ -429,6 +429,8 @@ void imgui_md::SPAN_IMG(const MD_SPAN_IMG_DETAIL* d, bool e)
 			}
 
 			ImGui::Image(nfo.texture_id, nfo.size, nfo.uv0, nfo.uv1);
+			// Stay on the same line so consecutive inline images or text continue horizontally
+			ImGui::SameLine(0, 0);
 
 			if (ImGui::IsItemHovered()) {
 
@@ -705,6 +707,8 @@ bool imgui_md::check_html(const char* str, const char* str_end)
 			}
 
 			ImGui::Image(nfo.texture_id, nfo.size, nfo.uv0, nfo.uv1);
+			// Stay on the same line so consecutive inline images or text continue horizontally
+			ImGui::SameLine(0, 0);
 		}
 		m_img_src.clear();
 		return true;
