@@ -616,6 +616,35 @@ static std::string get_div_class(const char* str, const char* str_end)
 
 }
 
+// Helper: extract an attribute value from an HTML tag string
+// e.g. extract_html_attr("<img src=\"foo.png\" width=\"200\">", "src") -> "foo.png"
+static std::string extract_html_attr(const std::string& tag, const char* name)
+{
+	std::string needle = std::string(name) + "=";
+	auto pos = tag.find(needle);
+	if (pos == std::string::npos) return "";
+	pos += needle.size();
+	if (pos >= tag.size()) return "";
+	char quote = tag[pos];
+	if (quote == '"' || quote == '\'') {
+		auto end = tag.find(quote, pos + 1);
+		if (end == std::string::npos) return "";
+		return tag.substr(pos + 1, end - pos - 1);
+	}
+	// No quotes: read until space or >
+	auto end = tag.find_first_of(" \t\n>", pos);
+	if (end == std::string::npos) end = tag.size();
+	return tag.substr(pos, end - pos);
+}
+
+static int extract_html_int_attr(const std::string& tag, const char* name, int defaultValue)
+{
+	std::string val = extract_html_attr(tag, name);
+	if (val.empty()) return defaultValue;
+	try { return std::stoi(val); }
+	catch (...) { return defaultValue; }
+}
+
 bool imgui_md::check_html(const char* str, const char* str_end)
 {
 	const size_t sz = str_end - str;
@@ -634,6 +663,50 @@ bool imgui_md::check_html(const char* str, const char* str_end)
 	}
 	if (strncmp(str, "</u>", sz) == 0) {
 		m_is_underline = false;
+		return true;
+	}
+
+	// <img src="..." width="..." height="...">
+	if (sz >= 4 && strncmp(str, "<img", 4) == 0) {
+		std::string tag(str, str_end);
+		std::string src = extract_html_attr(tag, "src");
+		if (src.empty()) return false;
+
+		int width = extract_html_int_attr(tag, "width", 0);
+		int height = extract_html_int_attr(tag, "height", 0);
+
+		m_img_src = src;
+		image_info nfo;
+		if (get_image(nfo)) {
+			const float scale = ImGui::GetStyle().FontScaleMain;
+			float natural_w = nfo.size.x * scale;
+			float natural_h = nfo.size.y * scale;
+
+			if (width > 0 && height > 0) {
+				nfo.size.x = (float)width;
+				nfo.size.y = (float)height;
+			} else if (width > 0) {
+				nfo.size.x = (float)width;
+				nfo.size.y = natural_h * ((float)width / natural_w);
+			} else if (height > 0) {
+				nfo.size.x = natural_w * ((float)height / natural_h);
+				nfo.size.y = (float)height;
+			} else {
+				nfo.size.x = natural_w;
+				nfo.size.y = natural_h;
+			}
+
+			// Clamp to available width
+			ImVec2 const csz = ImGui::GetContentRegionAvail();
+			if (nfo.size.x > csz.x) {
+				float r = nfo.size.y / nfo.size.x;
+				nfo.size.x = csz.x;
+				nfo.size.y = csz.x * r;
+			}
+
+			ImGui::Image(nfo.texture_id, nfo.size, nfo.uv0, nfo.uv1);
+		}
+		m_img_src.clear();
 		return true;
 	}
 
