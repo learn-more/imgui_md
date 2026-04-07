@@ -39,8 +39,16 @@ struct imgui_md
 	//returns 0 on success
 	int print(const char* str, const char* str_end);
 
+	// Enable parsing of LaTeX math spans ($...$ and $$...$$).
+	// When enabled, MD_FLAG_LATEXMATHSPANS is set on the md4c parser,
+	// and MD_TEXT_LATEXMATH content is accumulated into m_latex_buffer
+	// between SPAN_LATEXMATH enter/leave (or SPAN_LATEXMATH_DISPLAY).
+	// The actual rendering happens in SPAN_LATEXMATH / SPAN_LATEXMATH_DISPLAY,
+	// which subclasses should override (default base class does nothing on leave).
+	void EnableLatex();
+
 	//for example, these flags can be changed in div callback
-	
+
 	//draw border
 	bool m_table_border = true;
 	//render header in a different way than other rows
@@ -134,6 +142,10 @@ protected:
 	bool m_is_image = false;
 	bool m_is_code = false; // true for block code and inline code
     bool m_is_code_block = false;
+	// LaTeX math state (populated when EnableLatex() has been called)
+	bool m_is_latex_inline = false;
+	bool m_is_latex_display = false;
+	std::string m_latex_buffer;
 	int m_quote_depth = 0;
 	std::vector<float> m_quote_start_y;
     std::string m_code_block_language;

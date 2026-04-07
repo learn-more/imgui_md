@@ -453,14 +453,31 @@ void imgui_md::SPAN_CODE(bool)
 }
 
 
-void imgui_md::SPAN_LATEXMATH(bool)
+void imgui_md::EnableLatex()
 {
-
+	m_md.flags |= MD_FLAG_LATEXMATHSPANS;
 }
 
-void imgui_md::SPAN_LATEXMATH_DISPLAY(bool)
+void imgui_md::SPAN_LATEXMATH(bool e)
 {
+	// Default base-class behavior: just track state and accumulate text.
+	// Subclasses should override this to actually render m_latex_buffer on leave.
+	if (e) {
+		m_is_latex_inline = true;
+		m_latex_buffer.clear();
+	} else {
+		m_is_latex_inline = false;
+	}
+}
 
+void imgui_md::SPAN_LATEXMATH_DISPLAY(bool e)
+{
+	if (e) {
+		m_is_latex_display = true;
+		m_latex_buffer.clear();
+	} else {
+		m_is_latex_display = false;
+	}
 }
 
 void imgui_md::SPAN_WIKILINK(const MD_SPAN_WIKILINK_DETAIL*, bool)
@@ -816,7 +833,11 @@ int imgui_md::text(MD_TEXTTYPE type, const char* str, const char* str_end)
 		}
 		break;
 	case MD_TEXT_LATEXMATH:
-		render_text(str, str_end);
+		if (m_is_latex_inline || m_is_latex_display) {
+			m_latex_buffer.append(str, str_end - str);
+		} else {
+			render_text(str, str_end);
+		}
 		break;
 	default:
 		break;
