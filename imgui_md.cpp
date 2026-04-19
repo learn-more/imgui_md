@@ -250,14 +250,63 @@ void imgui_md::BLOCK_TR(bool e)
 	if (m_table_open && e) ImGui::TableNextRow();
 }
 
-void imgui_md::BLOCK_TH(const MD_BLOCK_TD_DETAIL*, bool e)
+// Non-left alignments (CENTER/RIGHT) can't be expressed directly in ImGui
+// Tables, so we open a BeginGroup at cell entry, note the drawlist vertex
+// count, render content normally, then on exit shift the new vertices by
+// the appropriate X offset (cell_width - content_width, halved for center).
+// Known limitation: for multi-line wrapped cells, all lines shift by the
+// same offset (based on widest line), not per-line like HTML text-align.
+static void begin_aligned_cell(MD_ALIGN align, int& vtx_start, float& cell_width)
 {
-	if (m_table_open && e) ImGui::TableNextColumn();
+	if (align == MD_ALIGN_DEFAULT || align == MD_ALIGN_LEFT)
+		return;
+	cell_width = ImGui::GetContentRegionAvail().x;
+	vtx_start = ImGui::GetWindowDrawList()->VtxBuffer.Size;
+	ImGui::BeginGroup();
 }
 
-void imgui_md::BLOCK_TD(const MD_BLOCK_TD_DETAIL*, bool e)
+static void end_aligned_cell(MD_ALIGN align, int vtx_start, float cell_width)
 {
-	if (m_table_open && e) ImGui::TableNextColumn();
+	if (align == MD_ALIGN_DEFAULT || align == MD_ALIGN_LEFT)
+		return;
+	ImGui::EndGroup();
+	float content_w = ImGui::GetItemRectSize().x;
+	if (content_w >= cell_width)
+		return;
+	float offset = (align == MD_ALIGN_CENTER)
+		? (cell_width - content_w) * 0.5f
+		: (cell_width - content_w);
+	if (offset <= 0.0f)
+		return;
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	for (int i = vtx_start; i < dl->VtxBuffer.Size; ++i)
+		dl->VtxBuffer[i].pos.x += offset;
+}
+
+void imgui_md::BLOCK_TH(const MD_BLOCK_TD_DETAIL* d, bool e)
+{
+	if (!m_table_open) return;
+	if (e) {
+		ImGui::TableNextColumn();
+		m_cell_align = d->align;
+		begin_aligned_cell(m_cell_align, m_cell_vtx_start, m_cell_width);
+	} else {
+		end_aligned_cell(m_cell_align, m_cell_vtx_start, m_cell_width);
+		m_cell_align = MD_ALIGN_DEFAULT;
+	}
+}
+
+void imgui_md::BLOCK_TD(const MD_BLOCK_TD_DETAIL* d, bool e)
+{
+	if (!m_table_open) return;
+	if (e) {
+		ImGui::TableNextColumn();
+		m_cell_align = d->align;
+		begin_aligned_cell(m_cell_align, m_cell_vtx_start, m_cell_width);
+	} else {
+		end_aligned_cell(m_cell_align, m_cell_vtx_start, m_cell_width);
+		m_cell_align = MD_ALIGN_DEFAULT;
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -171,6 +171,14 @@ private:
 	//table state
 	int m_table_id_counter = 0;  // reset in print(); incremented per table for unique PushID
 	bool m_table_open = false;   // BeginTable() succeeded for the current table
+	// Per-cell alignment state, used while rendering a TH/TD whose
+	// align is CENTER or RIGHT. The cell opens a BeginGroup(), notes
+	// the drawlist vertex count, and on exit computes the content
+	// width from the group, then shifts the vertices horizontally so
+	// the content is centered/right-aligned within the cell.
+	MD_ALIGN m_cell_align = MD_ALIGN_DEFAULT;
+	int m_cell_vtx_start = 0;
+	float m_cell_width = 0.0f;
 
 	//list state
 	struct list_info
