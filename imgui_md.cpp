@@ -1,6 +1,6 @@
 /*
  * imgui_md: Markdown for Dear ImGui using MD4C
- * (http://https://github.com/mekhontsev/imgui_md)
+ * (https://github.com/mekhontsev/imgui_md)
  *
  * Copyright (c) 2021 Dmitry Mekhontsev
  *
