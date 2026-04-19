@@ -28,10 +28,10 @@
 #include <cassert>
 
 
-// Text-appropriate vertical spacing between markdown blocks.
-// Unlike NewLine() which adds a full FontSize (widget-oriented),
+// Small vertical gap between markdown blocks.
+// Unlike ImGui::NewLine() which adds a full FontSize (widget-oriented),
 // this adds a fraction of FontSize for tighter text layout.
-static void MdNewLine()
+static void add_block_gap()
 {
 	ImGui::Dummy(ImVec2(0.0f, ImGui::GetFontSize() * 0.3f));
 }
@@ -79,7 +79,6 @@ void imgui_md::BLOCK_UL(const MD_BLOCK_UL_DETAIL* d, bool e)
 		m_list_stack.push_back(list_info{ 0, d->mark, false });
 	} else {
 		m_list_stack.pop_back();
-		if (m_list_stack.empty()) MdNewLine();
 	}
 }
 
@@ -89,14 +88,13 @@ void imgui_md::BLOCK_OL(const MD_BLOCK_OL_DETAIL* d, bool e)
 		m_list_stack.push_back(list_info{ d->start, d->mark_delimiter, true });
 	} else {
 		m_list_stack.pop_back();
-		if (m_list_stack.empty()) MdNewLine();
 	}
 }
 
 void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL*, bool e)
 {
 	if (e) {
-		MdNewLine();
+		add_block_gap();
 
 		list_info& nfo = m_list_stack.back();
 		if (nfo.is_ol) {
@@ -123,9 +121,7 @@ void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL*, bool e)
 void imgui_md::BLOCK_HR(bool e)
 {
 	if (!e) {
-		MdNewLine();
 		ImGui::Separator();
-
 	}
 }
 
@@ -133,7 +129,6 @@ void imgui_md::BLOCK_H(const MD_BLOCK_H_DETAIL* d, bool e)
 {
 	if (e) {
 		m_hlevel = d->level;
-		MdNewLine();
 	} else {
 		m_hlevel = 0;
 	}
@@ -142,7 +137,8 @@ void imgui_md::BLOCK_H(const MD_BLOCK_H_DETAIL* d, bool e)
 
 	if (!e) {
 		if (d->level <= 2) {
-			MdNewLine();
+			// Small gap between heading text and the underline separator.
+			add_block_gap();
 			ImGui::Separator();
 		}
 	}
@@ -157,17 +153,27 @@ void imgui_md::BLOCK_QUOTE(bool e)
 {
 	if (e) {
 		m_quote_depth++;
-		MdNewLine();
 		ImGui::Indent();
-		// Remember the Y position before the quote content
-		m_quote_start_y.push_back(ImGui::GetCursorScreenPos().y);
+		// The quote frame provides the inter-block gap before its first child,
+		// so suppress the dispatcher's gap for that first child. The flag is
+		// cleared by the first child's dispatch, so later children still get
+		// normal inter-block gaps.
+		m_skip_next_block_gap = true;
+		// Remember the indented column (X, Y) at quote entry, so we can draw
+		// the vertical bar on the left at exit — by then the cursor has
+		// moved to the end of the last rendered word.
+		m_quote_start.push_back(ImGui::GetCursorScreenPos());
 	} else {
 		// Draw a vertical bar on the left side of the quote
-		if (!m_quote_start_y.empty()) {
-			float start_y = m_quote_start_y.back();
-			m_quote_start_y.pop_back();
-			float end_y = ImGui::GetCursorScreenPos().y;
-			float bar_x = ImGui::GetCursorScreenPos().x - ImGui::GetStyle().IndentSpacing * 0.5f;
+		if (!m_quote_start.empty()) {
+			float start_y = m_quote_start.back().y;
+			float indented_x = m_quote_start.back().x;
+			m_quote_start.pop_back();
+			// cursor.y at exit is the TOP of the last rendered line
+			// (render_text() ends with SameLine(0, 0)), so extend by one
+			// line height to cover that last line.
+			float end_y = ImGui::GetCursorScreenPos().y + ImGui::GetTextLineHeight();
+			float bar_x = indented_x - ImGui::GetStyle().IndentSpacing * 0.5f;
 			float thickness = 2.0f;
 			ImColor bar_color = ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
 			ImGui::GetWindowDrawList()->AddLine(
@@ -176,8 +182,6 @@ void imgui_md::BLOCK_QUOTE(bool e)
 		}
 		ImGui::Unindent();
 		m_quote_depth--;
-		if (m_quote_depth == 0)
-			MdNewLine();
 	}
 }
 
@@ -211,8 +215,7 @@ void imgui_md::BLOCK_HTML(bool)
 
 void imgui_md::BLOCK_P(bool)
 {
-	if (!m_list_stack.empty())return;
-	MdNewLine();
+	// Inter-block spacing is handled centrally in block() on enter.
 }
 
 void imgui_md::BLOCK_TABLE(const MD_BLOCK_TABLE_DETAIL*, bool e)
@@ -853,6 +856,36 @@ int imgui_md::text(MD_TEXTTYPE type, const char* str, const char* str_end)
 
 int imgui_md::block(MD_BLOCKTYPE type, void* d, bool e)
 {
+	// Centralized inter-block spacing: on enter of any top-level
+	// "paragraph-class" block, call add_block_gap() -- unless the flag
+	// m_skip_next_block_gap tells us to suppress it (true at the very
+	// first block, and for the first child of a quote). Blocks nested
+	// inside a list are skipped; LI handles its own spacing.
+	if (e) {
+		bool is_separator_eligible = false;
+		switch (type) {
+		case MD_BLOCK_P:
+		case MD_BLOCK_H:
+		case MD_BLOCK_QUOTE:
+		case MD_BLOCK_HR:
+		case MD_BLOCK_CODE:
+		case MD_BLOCK_HTML:
+		case MD_BLOCK_TABLE:
+		case MD_BLOCK_UL:
+		case MD_BLOCK_OL:
+			is_separator_eligible = m_list_stack.empty();
+			break;
+		default:
+			break;
+		}
+		if (is_separator_eligible) {
+			if (m_skip_next_block_gap)
+				m_skip_next_block_gap = false;
+			else
+				add_block_gap();
+		}
+	}
+
 	switch (type)
 	{
 	case MD_BLOCK_DOC:
@@ -958,9 +991,10 @@ int imgui_md::print(const char* str, const char* str_end)
 	if (str >= str_end)
         return 0;
 
-    // Markdown rendering always starts with MdNewLine() (via BLOCK_P or BLOCK_H),
-    // which advances Y by FontSize*0.3 + ItemSpacing.y. Pre-compensate for that.
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetFontSize() * 0.3f - ImGui::GetStyle().ItemSpacing.y);
+    // Inter-block spacing is emitted by block() before each top-level
+    // separator-eligible block; set the flag so the very first one is
+    // skipped (rendering starts flush at the caller's cursor).
+    m_skip_next_block_gap = true;
 
 	return md_parse(str, (MD_SIZE)(str_end - str), &m_md, this);
 }

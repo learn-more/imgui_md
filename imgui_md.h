@@ -142,16 +142,16 @@ protected:
 	bool m_is_image = false;
 	bool m_is_code = false; // true for block code and inline code
     bool m_is_code_block = false;
-	// LaTeX math state (populated when EnableLatex() has been called)
-	bool m_is_latex_inline = false;
+	bool m_is_latex_inline = false; // LaTeX math state (populated when EnableLatex() has been called)
 	bool m_is_latex_display = false;
 	std::string m_latex_buffer;
+	bool m_skip_next_block_gap = true;
 	int m_quote_depth = 0;
-	std::vector<float> m_quote_start_y;
+	std::vector<ImVec2> m_quote_start;  // position (screen coords) of the indented content column at quote entry; used at exit to draw the vertical bar
     std::string m_code_block_language;
     std::string m_code_block;
-	unsigned m_hlevel=0;//0 - no heading
-	
+	unsigned m_hlevel=0; // 0 - no heading
+
 private:
 
 	int text(MD_TEXTTYPE type, const char* str, const char* str_end);
