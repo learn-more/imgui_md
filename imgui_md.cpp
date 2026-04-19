@@ -959,7 +959,9 @@ int imgui_md::print(const char* str, const char* str_end)
     m_skip_next_block_gap = true;
     m_table_id_counter = 0;
 
-	return md_parse(str, (MD_SIZE)(str_end - str), &m_md, this);
+	int result = md_parse(str, (MD_SIZE)(str_end - str), &m_md, this);
+	ImGui::NewLine();
+	return result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
