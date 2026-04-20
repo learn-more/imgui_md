@@ -47,6 +47,11 @@ struct imgui_md
 	// which subclasses should override (default base class does nothing on leave).
 	void EnableLatex();
 
+	// Enable or disable a specific MD_FLAG_XXX on the md4c parser.
+	// Call before print(); default flags are MD_FLAG_TABLES, MD_FLAG_UNDERLINE,
+	// MD_FLAG_STRIKETHROUGH, MD_FLAG_TASKLISTS.
+	void set_flag(unsigned flag, bool enable);
+
 	//for example, these flags can be changed in div callback
 
 	//draw border
@@ -108,6 +113,10 @@ protected:
 
     // By default, code blocks are rendered as text with the code font, but you can override this
     virtual void render_code_block();
+
+    // Draw a non-interactive checkbox glyph for a task-list item bullet.
+    // Called from BLOCK_LI when MD_BLOCK_LI_DETAIL::is_task is non-zero.
+    virtual void render_task_marker(bool checked);
 
 	//url == m_href
 	virtual void open_url() const;

@@ -41,7 +41,7 @@ imgui_md::imgui_md()
 {
 	m_md.abi_version = 0;
 
-	m_md.flags = MD_FLAG_TABLES | MD_FLAG_UNDERLINE | MD_FLAG_STRIKETHROUGH;
+	m_md.flags = MD_FLAG_TABLES | MD_FLAG_UNDERLINE | MD_FLAG_STRIKETHROUGH | MD_FLAG_TASKLISTS;
 
 	m_md.enter_block = [](MD_BLOCKTYPE t, void* d, void* u) {
 		return ((imgui_md*)u)->block(t, d, true);
@@ -86,13 +86,18 @@ void imgui_md::BLOCK_OL(const MD_BLOCK_OL_DETAIL* d, bool e)
 	}
 }
 
-void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL*, bool e)
+void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL* d, bool e)
 {
 	if (e) {
 		add_block_gap();
 
 		list_info& nfo = m_list_stack.back();
-		if (nfo.is_ol) {
+		if (d && d->is_task) {
+			render_task_marker(d->task_mark == 'x' || d->task_mark == 'X');
+			ImGui::SameLine();
+			if (nfo.is_ol)
+				++nfo.cur_ol;
+		} else if (nfo.is_ol) {
 			ImGui::Text("%d%c", nfo.cur_ol++, nfo.delim);
 			ImGui::SameLine();
 		} else {
@@ -111,6 +116,35 @@ void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL*, bool e)
 	} else {
 		ImGui::Unindent();
 	}
+}
+
+void imgui_md::render_task_marker(bool checked)
+{
+	// Draw a small bordered square, with a check mark if `checked`.
+	// Uses the current font size to scale, stays aligned with the text baseline.
+	float h = ImGui::GetFontSize();
+	float sz = h * 0.75f;
+	ImVec2 cursor = ImGui::GetCursorScreenPos();
+	float y_center = cursor.y + h * 0.5f;
+	ImVec2 tl(cursor.x, y_center - sz * 0.5f);
+	ImVec2 br(cursor.x + sz, y_center + sz * 0.5f);
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	ImU32 border = ImGui::GetColorU32(ImGuiCol_Text);
+	float rounding = sz * 0.15f;
+	float thickness = (sz / 12.0f > 1.0f) ? (sz / 12.0f) : 1.0f;
+	dl->AddRect(tl, br, border, rounding, 0, thickness);
+	if (checked) {
+		ImU32 mark = ImGui::GetColorU32(ImGuiCol_CheckMark);
+		float pad = sz * 0.22f;
+		ImVec2 a(tl.x + pad, tl.y + sz * 0.55f);
+		ImVec2 b(tl.x + sz * 0.45f, br.y - pad);
+		ImVec2 c(br.x - pad, tl.y + pad);
+		float check_thick = (sz / 8.0f > 1.5f) ? (sz / 8.0f) : 1.5f;
+		dl->AddLine(a, b, mark, check_thick);
+		dl->AddLine(b, c, mark, check_thick);
+	}
+	// Reserve horizontal space; the caller issues SameLine() after.
+	ImGui::Dummy(ImVec2(sz, h));
 }
 
 void imgui_md::BLOCK_HR(bool e)
@@ -433,6 +467,14 @@ void imgui_md::SPAN_CODE(bool)
 void imgui_md::EnableLatex()
 {
 	m_md.flags |= MD_FLAG_LATEXMATHSPANS;
+}
+
+void imgui_md::set_flag(unsigned flag, bool enable)
+{
+	if (enable)
+		m_md.flags |= flag;
+	else
+		m_md.flags &= ~flag;
 }
 
 void imgui_md::SPAN_LATEXMATH(bool e)
