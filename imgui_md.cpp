@@ -851,6 +851,66 @@ bool imgui_md::check_html(const char* str, const char* str_end)
 	if (strncmp(str, "<mark>",  sz) == 0) { m_is_mark = true;  return true; }
 	if (strncmp(str, "</mark>", sz) == 0) { m_is_mark = false; return true; }
 
+	// <details> / </details>: open a CollapsingHeader whose label comes
+	// from the inner <summary>...</summary> line. When collapsed, all
+	// subsequent rendering is suppressed until the matching </details>.
+	// Requires the standard CommonMark pattern with blank lines:
+	//   <details>
+	//   <summary>Label</summary>
+	//
+	//   Markdown content here…
+	//
+	//   </details>
+	auto starts_with = [&](const char* prefix) {
+		size_t n = strlen(prefix);
+		return sz >= n && strncmp(str, prefix, n) == 0;
+	};
+	if (starts_with("<details>") || starts_with("<details ")) {
+		m_details_awaiting_summary = true;
+		// Swallow the stray "\n" chunk md4c emits between <details> and
+		// <summary> so the CollapsingHeader sits flush with the content
+		// above it.
+		m_details_suppress_next_raw_html = true;
+		return true;
+	}
+	if (starts_with("<summary>")) {
+		// Find "</summary>" on the same chunk.
+		const char* p = str + strlen("<summary>");
+		const char* close = nullptr;
+		for (const char* q = p; q + 10 <= str_end; ++q) {
+			if (strncmp(q, "</summary>", 10) == 0) { close = q; break; }
+		}
+		std::string label = (close != nullptr)
+			? std::string(p, close)
+			: std::string(p, str_end);
+		if (!m_details_awaiting_summary) {
+			// Orphan <summary> (not inside a <details>) — just show the label.
+			ImGui::TextUnformatted(label.c_str());
+			return true;
+		}
+		ImGui::PushID((int)m_details_open_stack.size());
+		bool open = ImGui::CollapsingHeader(label.c_str());
+		ImGui::PopID();
+		m_details_open_stack.push_back(open);
+		if (open)
+			ImGui::Indent();
+		m_details_awaiting_summary = false;
+		return true;
+	}
+	if (starts_with("</details>")) {
+		if (!m_details_open_stack.empty()) {
+			bool was_open = m_details_open_stack.back();
+			m_details_open_stack.pop_back();
+			if (was_open)
+				ImGui::Unindent();
+		}
+		m_details_awaiting_summary = false;
+		// Eat the trailing "\n" chunk md4c emits right after this tag
+		// so content below sits flush with the collapsible.
+		m_details_suppress_next_raw_html = true;
+		return true;
+	}
+
 	// <img src="..." width="..." height="...">
 	if (sz >= 4 && strncmp(str, "<img", 4) == 0) {
 		std::string tag(str, str_end);
@@ -968,8 +1028,24 @@ void imgui_md::render_inline_code(const char *str, const char *str_end)
     m_is_code = false;
 }
 
+// True when we're inside a <details> that the user has collapsed.
+// Used to suppress all drawing between <summary>…</summary> and
+// </details>, while still letting check_html() see the </details>
+// tag so it can close the stack.
+static bool details_hidden(const std::vector<bool>& stack)
+{
+	for (bool open : stack)
+		if (!open) return true;
+	return false;
+}
+
 int imgui_md::text(MD_TEXTTYPE type, const char* str, const char* str_end)
 {
+	// Even while hidden we keep processing raw HTML so </details>
+	// can pop the stack; everything else is discarded.
+	if (details_hidden(m_details_open_stack) && type != MD_TEXT_HTML)
+		return 0;
+
 	switch (type) {
 	case MD_TEXT_NORMAL:
 		if (m_admonition_scan_pending) {
@@ -1016,7 +1092,19 @@ int imgui_md::text(MD_TEXTTYPE type, const char* str, const char* str_end)
 		break;
 	case MD_TEXT_HTML:
 		if (!check_html(str, str_end)) {
-			render_text(str, str_end);
+			// Drop stray raw-HTML chunks (typically "\n") that
+			// md4c emits between recognized tags inside/around a
+			// <details> block — drawing them would widen the
+			// collapsible's vertical spacing.
+			if (m_details_suppress_next_raw_html) {
+				m_details_suppress_next_raw_html = false;
+			} else if (!details_hidden(m_details_open_stack)) {
+				render_text(str, str_end);
+			}
+		} else {
+			// Recognized tag: clear any pending suppression since
+			// the tag itself was already handled and any flag it
+			// set should take precedence on the following chunk.
 		}
 		break;
 	case MD_TEXT_LATEXMATH:
@@ -1035,6 +1123,13 @@ int imgui_md::text(MD_TEXTTYPE type, const char* str, const char* str_end)
 
 int imgui_md::block(MD_BLOCKTYPE type, void* d, bool e)
 {
+	// Suppress block rendering while inside a collapsed <details>.
+	// BLOCK_HTML pairs still arrive (the tags themselves land as
+	// MD_TEXT_HTML in text(), which is allowed through), so we just
+	// drop any other block work here.
+	if (details_hidden(m_details_open_stack))
+		return 0;
+
 	// Centralized inter-block spacing: on enter of any top-level
 	// "paragraph-class" block, call add_block_gap() -- unless the flag
 	// m_skip_next_block_gap tells us to suppress it (true at the very

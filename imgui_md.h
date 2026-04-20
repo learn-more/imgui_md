@@ -159,6 +159,18 @@ protected:
 	bool m_is_sup = false;
 	bool m_is_kbd = false;
 	bool m_is_mark = false;
+
+	// <details>/<summary> state. One bool per currently-open <details>
+	// (true = expanded, false = collapsed -> content is skipped).
+	// m_details_awaiting_summary is set between <details> and the first
+	// <summary>…</summary>, during which the summary's inner text is
+	// captured as the header label.
+	std::vector<bool> m_details_open_stack;
+	bool m_details_awaiting_summary = false;
+	// True for exactly one MD_TEXT_HTML event right after </details>
+	// is processed — lets us swallow the trailing "\n" that md4c emits
+	// as a separate chunk, so content after the collapsible sits tight.
+	bool m_details_suppress_next_raw_html = false;
 	bool m_is_table_header = false;
 	bool m_is_table_body = false;
 	bool m_is_image = false;
