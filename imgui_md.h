@@ -33,6 +33,9 @@
 
 struct imgui_md
 {
+	// GitHub-style admonitions: > [!NOTE] / [!TIP] / [!IMPORTANT] / [!WARNING] / [!CAUTION]
+	enum class AdmonitionKind { None, Note, Tip, Important, Warning, Caution };
+
 	imgui_md();
 	virtual ~imgui_md() {};
 
@@ -118,6 +121,11 @@ protected:
     // Called from BLOCK_LI when MD_BLOCK_LI_DETAIL::is_task is non-zero.
     virtual void render_task_marker(bool checked);
 
+    // Draw the admonition header row (icon/label) after detecting
+    // a GitHub-style "[!NOTE]" / "[!TIP]" / ... marker at the start
+    // of a blockquote.
+    virtual void render_admonition_header(AdmonitionKind kind);
+
 	//url == m_href
 	virtual void open_url() const;
 
@@ -157,6 +165,16 @@ protected:
 	bool m_skip_next_block_gap = true;
 	int m_quote_depth = 0;
 	std::vector<ImVec2> m_quote_start;  // position (screen coords) of the indented content column at quote entry; used at exit to draw the vertical bar
+
+	// Current quote's kind (None if a plain quote). Cleared on quote enter,
+	// set by admonition detection in text().
+	AdmonitionKind m_admonition_kind = AdmonitionKind::None;
+	// True on entry to a quote while we're waiting for the first text to
+	// decide whether it's an admonition. Any span enter or non-match clears it.
+	bool m_admonition_scan_pending = false;
+	// After detecting a marker like "[!NOTE]", skip the following soft break
+	// so the admonition label and the content don't collide on one line.
+	bool m_admonition_skip_next_softbr = false;
     std::string m_code_block_language;
     std::string m_code_block;
 	unsigned m_hlevel=0; // 0 - no heading

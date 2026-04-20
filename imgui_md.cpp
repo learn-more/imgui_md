@@ -178,6 +178,32 @@ void imgui_md::BLOCK_DOC(bool)
 
 }
 
+// GitHub admonition palette tuned for dark themes. The same colors are
+// used both for the "NOTE" label and for the quote's left bar.
+static ImVec4 admonition_color(imgui_md::AdmonitionKind k)
+{
+	switch (k) {
+	case imgui_md::AdmonitionKind::Note:      return ImVec4(0.35f, 0.65f, 1.00f, 1.0f);
+	case imgui_md::AdmonitionKind::Tip:       return ImVec4(0.25f, 0.73f, 0.32f, 1.0f);
+	case imgui_md::AdmonitionKind::Important: return ImVec4(0.82f, 0.60f, 0.97f, 1.0f);
+	case imgui_md::AdmonitionKind::Warning:   return ImVec4(0.95f, 0.75f, 0.22f, 1.0f);
+	case imgui_md::AdmonitionKind::Caution:   return ImVec4(0.97f, 0.32f, 0.29f, 1.0f);
+	default: return ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
+	}
+}
+
+static const char* admonition_label(imgui_md::AdmonitionKind k)
+{
+	switch (k) {
+	case imgui_md::AdmonitionKind::Note:      return "NOTE";
+	case imgui_md::AdmonitionKind::Tip:       return "TIP";
+	case imgui_md::AdmonitionKind::Important: return "IMPORTANT";
+	case imgui_md::AdmonitionKind::Warning:   return "WARNING";
+	case imgui_md::AdmonitionKind::Caution:   return "CAUTION";
+	default: return "";
+	}
+}
+
 void imgui_md::BLOCK_QUOTE(bool e)
 {
 	if (e) {
@@ -192,6 +218,9 @@ void imgui_md::BLOCK_QUOTE(bool e)
 		// the vertical bar on the left at exit — by then the cursor has
 		// moved to the end of the last rendered word.
 		m_quote_start.push_back(ImGui::GetCursorScreenPos());
+		// Arm admonition scan for the first text event inside this quote.
+		m_admonition_scan_pending = true;
+		m_admonition_kind = AdmonitionKind::None;
 	} else {
 		// Draw a vertical bar on the left side of the quote
 		if (!m_quote_start.empty()) {
@@ -203,15 +232,71 @@ void imgui_md::BLOCK_QUOTE(bool e)
 			// line height to cover that last line.
 			float end_y = ImGui::GetCursorScreenPos().y + ImGui::GetTextLineHeight();
 			float bar_x = indented_x - ImGui::GetStyle().IndentSpacing * 0.5f;
-			float thickness = 2.0f;
-			ImColor bar_color = ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
+			float thickness = (m_admonition_kind != AdmonitionKind::None) ? 3.0f : 2.0f;
+			ImColor bar_color = (m_admonition_kind != AdmonitionKind::None)
+				? ImColor(admonition_color(m_admonition_kind))
+				: ImColor(ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
 			ImGui::GetWindowDrawList()->AddLine(
 				ImVec2(bar_x, start_y), ImVec2(bar_x, end_y),
 				bar_color, thickness);
 		}
 		ImGui::Unindent();
 		m_quote_depth--;
+		m_admonition_kind = AdmonitionKind::None;
+		m_admonition_scan_pending = false;
+		m_admonition_skip_next_softbr = false;
 	}
+}
+
+// Try to match a "[!NOTE]" / "[!TIP]" / ... marker at the start of `str`.
+// On match, returns the admonition kind and sets `marker_end` to the byte
+// just after the closing ']'. Case-insensitive per GitHub behavior.
+static imgui_md::AdmonitionKind match_admonition_marker(
+	const char* str, const char* str_end, const char*& marker_end)
+{
+	if (str_end - str < 4 || str[0] != '[' || str[1] != '!')
+		return imgui_md::AdmonitionKind::None;
+	const char* p = str + 2;
+	const char* close = p;
+	while (close < str_end && *close != ']')
+		++close;
+	if (close >= str_end)
+		return imgui_md::AdmonitionKind::None;
+	auto eq_ci = [](const char* a, const char* a_end, const char* b) {
+		size_t n = (size_t)(a_end - a);
+		if (strlen(b) != n) return false;
+		for (size_t i = 0; i < n; ++i) {
+			char ca = a[i]; if (ca >= 'a' && ca <= 'z') ca = (char)(ca - 'a' + 'A');
+			if (ca != b[i]) return false;
+		}
+		return true;
+	};
+	imgui_md::AdmonitionKind kind = imgui_md::AdmonitionKind::None;
+	if      (eq_ci(p, close, "NOTE"))      kind = imgui_md::AdmonitionKind::Note;
+	else if (eq_ci(p, close, "TIP"))       kind = imgui_md::AdmonitionKind::Tip;
+	else if (eq_ci(p, close, "IMPORTANT")) kind = imgui_md::AdmonitionKind::Important;
+	else if (eq_ci(p, close, "WARNING"))   kind = imgui_md::AdmonitionKind::Warning;
+	else if (eq_ci(p, close, "CAUTION"))   kind = imgui_md::AdmonitionKind::Caution;
+	if (kind == imgui_md::AdmonitionKind::None)
+		return kind;
+	marker_end = close + 1;
+	return kind;
+}
+
+void imgui_md::render_admonition_header(AdmonitionKind kind)
+{
+	ImVec4 col = admonition_color(kind);
+	ImGui::PushStyleColor(ImGuiCol_Text, col);
+	// Bold the label: fake it by pushing the strong flag and re-picking the font.
+	bool saved_strong = m_is_strong;
+	m_is_strong = true;
+	set_font(true);
+	ImGui::TextUnformatted(admonition_label(kind));
+	set_font(false);
+	m_is_strong = saved_strong;
+	ImGui::PopStyleColor();
+	// TextUnformatted already advanced the cursor to the next line;
+	// the content starts right below, no extra NewLine needed.
 }
 
 
@@ -818,6 +903,23 @@ int imgui_md::text(MD_TEXTTYPE type, const char* str, const char* str_end)
 {
 	switch (type) {
 	case MD_TEXT_NORMAL:
+		if (m_admonition_scan_pending) {
+			m_admonition_scan_pending = false;
+			const char* marker_end = nullptr;
+			AdmonitionKind kind = match_admonition_marker(str, str_end, marker_end);
+			if (kind != AdmonitionKind::None) {
+				m_admonition_kind = kind;
+				render_admonition_header(kind);
+				m_admonition_skip_next_softbr = true;
+				// Render any trailing content on the marker's own line
+				// (skip leading whitespace).
+				while (marker_end < str_end && (*marker_end == ' ' || *marker_end == '\t'))
+					++marker_end;
+				if (marker_end < str_end)
+					render_text(marker_end, str_end);
+				break;
+			}
+		}
 		render_text(str, str_end);
 		break;
 	case MD_TEXT_CODE:
@@ -832,6 +934,10 @@ int imgui_md::text(MD_TEXTTYPE type, const char* str, const char* str_end)
 		ImGui::NewLine();
 		break;
 	case MD_TEXT_SOFTBR:
+		if (m_admonition_skip_next_softbr) {
+			m_admonition_skip_next_softbr = false;
+			break;
+		}
 		soft_break();
 		break;
 	case MD_TEXT_ENTITY:
@@ -950,6 +1056,10 @@ int imgui_md::block(MD_BLOCKTYPE type, void* d, bool e)
 
 int imgui_md::span(MD_SPANTYPE type, void* d, bool e)
 {
+	// Any span opening before the first text in a quote means this is not
+	// an admonition (the marker must be plain text).
+	if (e && m_admonition_scan_pending)
+		m_admonition_scan_pending = false;
 	switch (type)
 	{
 	case MD_SPAN_EM:
