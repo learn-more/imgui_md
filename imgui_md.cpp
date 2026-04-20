@@ -601,9 +601,22 @@ void imgui_md::SPAN_DEL(bool e)
 
 void imgui_md::render_text(const char* str, const char* str_end)
 {
-	const float size = get_font().size;
 	const ImGuiStyle& s = ImGui::GetStyle();
 	bool is_lf = false;
+
+	// <sub>/<sup>: render with a smaller font, offset vertically within
+	// the current line so the baseline roughly matches GitHub's look.
+	bool pushed_small_font = false;
+	float base_font_size = get_font().size;
+	float sub_sup_y_offset = 0.0f;
+	if (m_is_sub || m_is_sup) {
+		auto f = get_font();
+		float small = f.size * 0.7f;
+		ImGui::PushFont(f.font, small);
+		pushed_small_font = true;
+		sub_sup_y_offset = m_is_sup ? 0.0f : (base_font_size - small);
+	}
+	const float size = ImGui::GetFontSize();
 
 	while (!m_is_image && str < str_end) {
 
@@ -618,13 +631,54 @@ void imgui_md::render_text(const char* str, const char* str_end)
 			if (te == str) ++te;
 		}
 
-		
+		// Vertical offset for sub/sup while keeping the surrounding
+		// line's Y intact (restored after the text is drawn).
+		float saved_y = 0.0f;
+		bool adjusted_y = false;
+		if (sub_sup_y_offset != 0.0f) {
+			saved_y = ImGui::GetCursorPosY();
+			ImGui::SetCursorPosY(saved_y + sub_sup_y_offset);
+			adjusted_y = true;
+		}
+
+		// <mark>: draw a highlight rectangle behind the text using
+		// drawlist channels so the background stays under the glyphs.
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		bool mark_split = m_is_mark;
+		if (mark_split) {
+			dl->ChannelsSplit(2);
+			dl->ChannelsSetCurrent(1);
+		}
+
 		ImGui::TextUnformatted(str, te);
+
+		if (mark_split) {
+			dl->ChannelsSetCurrent(0);
+			ImVec2 mi = ImGui::GetItemRectMin();
+			ImVec2 ma = ImGui::GetItemRectMax();
+			mi.x -= 2.0f; ma.x += 2.0f;
+			dl->AddRectFilled(mi, ma, IM_COL32(245, 205, 60, 120), 2.0f);
+			dl->ChannelsMerge();
+		}
+		// <kbd>: draw a thin rounded border around the glyph run.
+		if (m_is_kbd) {
+			ImVec2 mi = ImGui::GetItemRectMin();
+			ImVec2 ma = ImGui::GetItemRectMax();
+			mi.x -= 3.0f; ma.x += 3.0f;
+			ImU32 border = ImGui::GetColorU32(ImGuiCol_Border);
+			dl->AddRect(mi, ma, border, 3.0f, 0, 1.0f);
+		}
+
+		// Restore Y so the next span sits on the original line.
+		if (adjusted_y) {
+			float cur_x = ImGui::GetCursorPosX();
+			ImGui::SetCursorPos(ImVec2(cur_x, saved_y));
+		}
 
 		if (te > str && *(te - 1) == '\n') {
 			is_lf = true;
 		}
-		
+
 		if (!m_href.empty()) {
 
 			ImVec4 c;
@@ -653,6 +707,9 @@ void imgui_md::render_text(const char* str, const char* str_end)
 
 		while (str < str_end && *str == ' ')++str;
 	}
+
+	if (pushed_small_font)
+		ImGui::PopFont();
 
 	if (!is_lf)
     {
@@ -781,6 +838,18 @@ bool imgui_md::check_html(const char* str, const char* str_end)
 		m_is_underline = false;
 		return true;
 	}
+
+	// Inline HTML spans with built-in rendering. The text between the
+	// opening and closing tags arrives as normal MD_TEXT_NORMAL events;
+	// render_text() inspects these flags and adjusts accordingly.
+	if (strncmp(str, "<sub>",   sz) == 0) { m_is_sub  = true;  return true; }
+	if (strncmp(str, "</sub>",  sz) == 0) { m_is_sub  = false; return true; }
+	if (strncmp(str, "<sup>",   sz) == 0) { m_is_sup  = true;  return true; }
+	if (strncmp(str, "</sup>",  sz) == 0) { m_is_sup  = false; return true; }
+	if (strncmp(str, "<kbd>",   sz) == 0) { m_is_kbd  = true;  return true; }
+	if (strncmp(str, "</kbd>",  sz) == 0) { m_is_kbd  = false; return true; }
+	if (strncmp(str, "<mark>",  sz) == 0) { m_is_mark = true;  return true; }
+	if (strncmp(str, "</mark>", sz) == 0) { m_is_mark = false; return true; }
 
 	// <img src="..." width="..." height="...">
 	if (sz >= 4 && strncmp(str, "<img", 4) == 0) {

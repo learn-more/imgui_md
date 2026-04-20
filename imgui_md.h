@@ -154,6 +154,11 @@ protected:
 	bool m_is_strikethrough = false;
 	bool m_is_em = false;
 	bool m_is_strong = false;
+	// Inline HTML span state (driven by <sub>, <sup>, <kbd>, <mark>)
+	bool m_is_sub = false;
+	bool m_is_sup = false;
+	bool m_is_kbd = false;
+	bool m_is_mark = false;
 	bool m_is_table_header = false;
 	bool m_is_table_body = false;
 	bool m_is_image = false;
