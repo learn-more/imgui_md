@@ -167,10 +167,21 @@ protected:
 	// captured as the header label.
 	std::vector<bool> m_details_open_stack;
 	bool m_details_awaiting_summary = false;
+	// True when the current <details ...> tag had the `open` attribute,
+	// so the next <summary>…</summary> should start expanded.
+	bool m_details_awaiting_open_default = false;
 	// True for exactly one MD_TEXT_HTML event right after </details>
 	// is processed — lets us swallow the trailing "\n" that md4c emits
 	// as a separate chunk, so content after the collapsible sits tight.
 	bool m_details_suppress_next_raw_html = false;
+	int m_details_id_counter = 0;  // reset in print(); incremented per <summary> for unique PushID
+
+	// <pre>…</pre> state. Between the tags, raw HTML text is buffered
+	// in m_pre_buffer; it's then rendered as monospaced block text
+	// (no code-block frame, no syntax coloring). Reset in print().
+	bool m_in_pre = false;
+	std::string m_pre_buffer;
+
 	bool m_is_table_header = false;
 	bool m_is_table_body = false;
 	bool m_is_image = false;

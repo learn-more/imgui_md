@@ -865,8 +865,79 @@ bool imgui_md::check_html(const char* str, const char* str_end)
 		size_t n = strlen(prefix);
 		return sz >= n && strncmp(str, prefix, n) == 0;
 	};
+
+	// <pre>...</pre>: block-level preformatted monospace text.
+	// md4c treats <pre> as a CommonMark type-1 HTML block, delivering the
+	// content through MD_TEXT_HTML events that include the tags themselves.
+	// Buffer across chunks in case md4c splits on newlines.
+	auto render_pre = [&](const char* s, const char* e) {
+		// Skip one optional leading '\n' right after <pre>.
+		if (s < e && *s == '\n') ++s;
+		// When hidden by a collapsed <details>, consume but don't render.
+		for (bool open : m_details_open_stack)
+			if (!open) return;
+		// m_is_code makes subclass get_font() return the monospace code font.
+		m_is_code = true;
+		auto f = get_font();
+		if (f.font) ImGui::PushFont(f.font, f.size);
+		while (s < e) {
+			const char* eol = s;
+			while (eol < e && *eol != '\n') ++eol;
+			if (eol > s)
+				ImGui::TextUnformatted(s, eol);
+			else
+				ImGui::NewLine();
+			s = (eol < e) ? eol + 1 : e;
+		}
+		if (f.font) ImGui::PopFont();
+		m_is_code = false;
+	};
+	auto find_close_pre = [&](const char* s, const char* e) -> const char* {
+		for (const char* q = s; q + 6 <= e; ++q)
+			if (strncmp(q, "</pre>", 6) == 0) return q;
+		return nullptr;
+	};
+	if (m_in_pre) {
+		const char* close = find_close_pre(str, str_end);
+		if (close) {
+			m_pre_buffer.append(str, close);
+			render_pre(m_pre_buffer.data(), m_pre_buffer.data() + m_pre_buffer.size());
+			m_pre_buffer.clear();
+			m_in_pre = false;
+		} else {
+			m_pre_buffer.append(str, str_end);
+		}
+		return true;
+	}
+	if (starts_with("<pre>") || starts_with("<pre ")) {
+		const char* gt = (const char*)memchr(str, '>', str_end - str);
+		const char* content_start = gt ? gt + 1 : str_end;
+		const char* close = find_close_pre(content_start, str_end);
+		if (close) {
+			render_pre(content_start, close);
+		} else {
+			m_pre_buffer.assign(content_start, str_end);
+			m_in_pre = true;
+		}
+		return true;
+	}
 	if (starts_with("<details>") || starts_with("<details ")) {
 		m_details_awaiting_summary = true;
+		// Check for the `open` attribute (boolean HTML attribute: `<details open>`
+		// or `<details open="open">`). Simple substring check between the tag
+		// start and the closing '>'.
+		const char* tag_end = (const char*)memchr(str, '>', str_end - str);
+		if (!tag_end) tag_end = str_end;
+		bool has_open_attr = false;
+		for (const char* q = str; q + 4 <= tag_end; ++q) {
+			if ((q == str || q[-1] == ' ' || q[-1] == '\t') &&
+			    strncmp(q, "open", 4) == 0 &&
+			    (q + 4 == tag_end || q[4] == ' ' || q[4] == '\t' || q[4] == '=' || q[4] == '>')) {
+				has_open_attr = true;
+				break;
+			}
+		}
+		m_details_awaiting_open_default = has_open_attr;
 		// Swallow the stray "\n" chunk md4c emits between <details> and
 		// <summary> so the CollapsingHeader sits flush with the content
 		// above it.
@@ -880,21 +951,53 @@ bool imgui_md::check_html(const char* str, const char* str_end)
 		for (const char* q = p; q + 10 <= str_end; ++q) {
 			if (strncmp(q, "</summary>", 10) == 0) { close = q; break; }
 		}
-		std::string label = (close != nullptr)
+		std::string raw_label = (close != nullptr)
 			? std::string(p, close)
 			: std::string(p, str_end);
+		// Decode the common HTML entities so `<summary>&lt;pre&gt;</summary>`
+		// displays as `<pre>` in the collapsing header.
+		std::string label;
+		label.reserve(raw_label.size());
+		for (size_t i = 0; i < raw_label.size(); ) {
+			if (raw_label[i] == '&') {
+				if (raw_label.compare(i, 4, "&lt;")   == 0) { label += '<';  i += 4; continue; }
+				if (raw_label.compare(i, 4, "&gt;")   == 0) { label += '>';  i += 4; continue; }
+				if (raw_label.compare(i, 5, "&amp;")  == 0) { label += '&';  i += 5; continue; }
+				if (raw_label.compare(i, 6, "&quot;") == 0) { label += '"';  i += 6; continue; }
+				if (raw_label.compare(i, 6, "&apos;") == 0) { label += '\''; i += 6; continue; }
+				if (raw_label.compare(i, 5, "&#39;")  == 0) { label += '\''; i += 5; continue; }
+			}
+			label += raw_label[i++];
+		}
 		if (!m_details_awaiting_summary) {
 			// Orphan <summary> (not inside a <details>) — just show the label.
 			ImGui::TextUnformatted(label.c_str());
 			return true;
 		}
-		ImGui::PushID((int)m_details_open_stack.size());
+		// If any ancestor <details> is collapsed, suppress this nested header
+		// entirely. Still push to the stack (as closed) so the matching
+		// </details> pops correctly.
+		bool any_ancestor_closed = false;
+		for (bool open : m_details_open_stack)
+			if (!open) { any_ancestor_closed = true; break; }
+		if (any_ancestor_closed) {
+			m_details_open_stack.push_back(false);
+			m_details_awaiting_summary = false;
+			m_details_awaiting_open_default = false;
+			return true;
+		}
+		ImGui::PushID(m_details_id_counter++);
+		// Honour the `open` attribute on <details open>: pre-open the
+		// CollapsingHeader once (user can still collapse it afterwards).
+		if (m_details_awaiting_open_default)
+			ImGui::SetNextItemOpen(true, ImGuiCond_Once);
 		bool open = ImGui::CollapsingHeader(label.c_str());
 		ImGui::PopID();
 		m_details_open_stack.push_back(open);
 		if (open)
 			ImGui::Indent();
 		m_details_awaiting_summary = false;
+		m_details_awaiting_open_default = false;
 		return true;
 	}
 	if (starts_with("</details>")) {
@@ -913,6 +1016,9 @@ bool imgui_md::check_html(const char* str, const char* str_end)
 
 	// <img src="..." width="..." height="...">
 	if (sz >= 4 && strncmp(str, "<img", 4) == 0) {
+		// Consume but don't render when hidden by a collapsed <details>.
+		for (bool open : m_details_open_stack)
+			if (!open) return true;
 		std::string tag(str, str_end);
 		std::string src = extract_html_attr(tag, "src");
 		if (src.empty()) return false;
@@ -1220,6 +1326,9 @@ int imgui_md::block(MD_BLOCKTYPE type, void* d, bool e)
 
 int imgui_md::span(MD_SPANTYPE type, void* d, bool e)
 {
+	// Suppress span rendering while inside a collapsed <details>.
+	if (details_hidden(m_details_open_stack))
+		return 0;
 	// Any span opening before the first text in a quote means this is not
 	// an admonition (the marker must be plain text).
 	if (e && m_admonition_scan_pending)
@@ -1274,6 +1383,9 @@ int imgui_md::print(const char* str, const char* str_end)
     // skipped (rendering starts flush at the caller's cursor).
     m_skip_next_block_gap = true;
     m_table_id_counter = 0;
+    m_details_id_counter = 0;
+    m_in_pre = false;
+    m_pre_buffer.clear();
 
 	int result = md_parse(str, (MD_SIZE)(str_end - str), &m_md, this);
 	ImGui::NewLine();
