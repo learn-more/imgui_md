@@ -89,13 +89,16 @@ void imgui_md::BLOCK_OL(const MD_BLOCK_OL_DETAIL* d, bool e)
 void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL* d, bool e)
 {
 	if (e) {
-		// Skip the per-item gap on the first LI: the parent UL/OL's
-		// enter already produced one inter-block gap, and emitting
-		// another here would make P->list transitions visibly larger
-		// than list->P (asymmetric).
-		if (m_list_stack.back().first_item_pending)
-			m_list_stack.back().first_item_pending = false;
-		else
+		// Skip the per-item gap on the first LI of a top-level list:
+		// the parent UL/OL's centralized enter-gap already provided
+		// one inter-block gap, and emitting another would make
+		// P->list transitions visibly larger than list->P. For nested
+		// lists the centralized gap was suppressed (we are inside a
+		// list), so we still need this gap to break onto a new line.
+		bool is_first = m_list_stack.back().first_item_pending;
+		m_list_stack.back().first_item_pending = false;
+		bool is_top_level = (m_list_stack.size() == 1);
+		if (!(is_first && is_top_level))
 			add_block_gap();
 
 		list_info& nfo = m_list_stack.back();
