@@ -1261,8 +1261,17 @@ int imgui_md::block(MD_BLOCKTYPE type, void* d, bool e)
 		if (is_separator_eligible) {
 			if (m_skip_next_block_gap)
 				m_skip_next_block_gap = false;
-			else
+			else {
 				add_block_gap();
+				// Extra breathing room above headers, decaying with depth:
+				// H1 gets the most, H6 none. Light scheme: 0.15 em per step.
+				if (type == MD_BLOCK_H) {
+					int level = ((MD_BLOCK_H_DETAIL*)d)->level;
+					int steps = 7 - level;
+					if (steps > 0)
+						ImGui::Dummy(ImVec2(0.0f, ImGui::GetFontSize() * 0.12f * (float)steps));
+				}
+			}
 		}
 	}
 
