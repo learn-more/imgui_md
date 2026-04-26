@@ -618,6 +618,38 @@ void imgui_md::render_text(const char* str, const char* str_end)
 	}
 	const float size = ImGui::GetFontSize();
 
+	// Mid-word break avoidance: if a new span begins mid-line and the
+	// remaining width on the current line cannot fit even its first
+	// word (including any leading blanks that were emitted between
+	// adjacent spans), drop to a fresh line so the wrap uses the full
+	// content width. Without this, ImGui's "force 1 char to fit"
+	// fallback in CalcWordWrapPosition splits inside the first word
+	// (e.g. "D" / "ear ImGui Bundle", or "browser u" / "sing ...").
+	if (!m_is_image && !m_is_table_header && str < str_end) {
+		float wl = ImGui::GetContentRegionAvail().x;
+		const char* word_start = str;
+		while (word_start < str_end
+		       && (*word_start == ' ' || *word_start == '\t'))
+			++word_start;
+		const char* word_end = word_start;
+		while (word_end < str_end && *word_end != ' '
+		       && *word_end != '\n' && *word_end != '\t') {
+			++word_end;
+		}
+		if (word_end > word_start) {
+			// Width to fit = any leading blanks + first word.
+			ImVec2 chunk_sz = ImGui::CalcTextSize(str, word_end);
+			const bool not_at_line_start =
+				ImGui::GetCursorPosX() > ImGui::GetCursorStartPos().x + 1.0f;
+			if (chunk_sz.x > wl && not_at_line_start) {
+				ImGui::NewLine();
+				// The leading blanks were inter-span spacing on the
+				// previous line; drop them now that we've broken.
+				str = word_start;
+			}
+		}
+	}
+
 	while (!m_is_image && str < str_end) {
 
 		const char* te = str_end;
