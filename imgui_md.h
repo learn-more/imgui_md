@@ -241,6 +241,7 @@ private:
 		unsigned	cur_ol;
 		char		delim;
 		bool		is_ol;
+		bool		first_item_pending;
 	};
 	std::vector<list_info> m_list_stack;
 

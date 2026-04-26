@@ -71,7 +71,7 @@ imgui_md::imgui_md()
 void imgui_md::BLOCK_UL(const MD_BLOCK_UL_DETAIL* d, bool e)
 {
 	if (e) {
-		m_list_stack.push_back(list_info{ 0, d->mark, false });
+		m_list_stack.push_back(list_info{ 0, d->mark, false, true });
 	} else {
 		m_list_stack.pop_back();
 	}
@@ -80,7 +80,7 @@ void imgui_md::BLOCK_UL(const MD_BLOCK_UL_DETAIL* d, bool e)
 void imgui_md::BLOCK_OL(const MD_BLOCK_OL_DETAIL* d, bool e)
 {
 	if (e) {
-		m_list_stack.push_back(list_info{ d->start, d->mark_delimiter, true });
+		m_list_stack.push_back(list_info{ d->start, d->mark_delimiter, true, true });
 	} else {
 		m_list_stack.pop_back();
 	}
@@ -89,7 +89,14 @@ void imgui_md::BLOCK_OL(const MD_BLOCK_OL_DETAIL* d, bool e)
 void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL* d, bool e)
 {
 	if (e) {
-		add_block_gap();
+		// Skip the per-item gap on the first LI: the parent UL/OL's
+		// enter already produced one inter-block gap, and emitting
+		// another here would make P->list transitions visibly larger
+		// than list->P (asymmetric).
+		if (m_list_stack.back().first_item_pending)
+			m_list_stack.back().first_item_pending = false;
+		else
+			add_block_gap();
 
 		list_info& nfo = m_list_stack.back();
 		if (d && d->is_task) {
@@ -1030,6 +1037,10 @@ bool imgui_md::check_html(const char* str, const char* str_end)
 			ImGui::Indent();
 		m_details_awaiting_summary = false;
 		m_details_awaiting_open_default = false;
+		// Eat the trailing "\n" chunk md4c emits right after </summary>;
+		// rendering it would advance the cursor by a full line and
+		// produce a visibly oversized gap before the body content.
+		m_details_suppress_next_raw_html = true;
 		return true;
 	}
 	if (starts_with("</details>")) {
