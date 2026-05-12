@@ -142,7 +142,11 @@ void imgui_md::render_task_marker(bool checked)
 	ImU32 border = ImGui::GetColorU32(ImGuiCol_Text);
 	float rounding = sz * 0.15f;
 	float thickness = (sz / 12.0f > 1.0f) ? (sz / 12.0f) : 1.0f;
+#if IMGUI_VERSION_NUM < 19276
 	dl->AddRect(tl, br, border, rounding, 0, thickness);
+#else
+	dl->AddRect(tl, br, border, rounding, thickness);
+#endif
 	if (checked) {
 		ImU32 mark = ImGui::GetColorU32(ImGuiCol_CheckMark);
 		float pad = sz * 0.22f;
@@ -708,7 +712,11 @@ void imgui_md::render_text(const char* str, const char* str_end)
 			ImVec2 ma = ImGui::GetItemRectMax();
 			mi.x -= 3.0f; ma.x += 3.0f;
 			ImU32 border = ImGui::GetColorU32(ImGuiCol_Border);
+#if IMGUI_VERSION_NUM < 19276
 			dl->AddRect(mi, ma, border, 3.0f, 0, 1.0f);
+#else
+			dl->AddRect(mi, ma, border, 3.0f, 1.0f);
+#endif
 		}
 
 		// Restore Y so the next span sits on the original line.
