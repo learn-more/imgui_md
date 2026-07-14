@@ -83,13 +83,16 @@ void imgui_md::BLOCK_OL(const MD_BLOCK_OL_DETAIL* d, bool e)
 	}
 }
 
-void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL*, bool e)
+void imgui_md::BLOCK_LI(const MD_BLOCK_LI_DETAIL* d, bool e)
 {
 	if (e) {
 		ImGui::NewLine();
 
 		list_info& nfo = m_list_stack.back();
-		if (nfo.is_ol) {
+		if (d->is_task) {
+			render_task_checkbox(d->task_mark == 'x' || d->task_mark == 'X');
+			ImGui::SameLine();
+		} else if (nfo.is_ol) {
 			ImGui::Text("%d%c", nfo.cur_ol++, nfo.delim);
 			ImGui::SameLine();
 		} else {
@@ -422,23 +425,25 @@ void imgui_md::render_text(const char* str, const char* str_end)
 
 		const char* te = str_end;
 
-		if (!m_is_table_header) {
-
-			float wl = ImGui::GetContentRegionAvail().x;
-
-			if (m_is_table_body) {
-				wl = (m_table_next_column < m_table_col_pos.size() ?
-					m_table_col_pos[m_table_next_column] : m_table_last_pos.x);
-				wl -= ImGui::GetCursorPosX();
-			}
-
+		{
+			// Inside a table cell, wrap to get_table_wrap_width() instead of the cell's own column width (see its
+			// doc comment for why).
+			const float wl = (m_is_table_header || m_is_table_body)
+				? get_table_wrap_width()
+				: ImGui::GetContentRegionAvail().x;
 			te = ImGui::GetFont()->CalcWordWrapPositionA(
 				scale, str, str_end, wl);
 
 			if (te == str)++te;
 		}
 
-		
+		// Rect this chunk is about to occupy, computed *before* drawing it so an override of
+		// text_run() can lay down a highlight quad first and have the glyphs land on top of it
+		// (same draw-order trick ImGui's own InputText uses for its selection highlight).
+		const ImVec2 run_pos = ImGui::GetCursorScreenPos();
+		const ImVec2 run_size = ImGui::CalcTextSize(str, te);
+		text_run(str, te, run_pos, ImVec2(run_pos.x + run_size.x, run_pos.y + run_size.y));
+
 		ImGui::TextUnformatted(str, te);
 
 		if (te > str && *(te - 1) == '\n') {
@@ -584,6 +589,18 @@ bool imgui_md::check_html(const char* str, const char* str_end)
 	return false;
 }
 
+
+void imgui_md::text_run(const char*, const char*, const ImVec2&, const ImVec2&)
+{
+	//Example: record [str,str_end)/[min,max) somewhere for hit-testing, or draw a highlight
+	//quad via ImGui::GetWindowDrawList()->AddRectFilled(min, max, col) before returning.
+}
+
+void imgui_md::render_task_checkbox(bool)
+{
+	//Example: draw a checkbox glyph at ImGui::GetCursorScreenPos(), then reserve its width with
+	//ImGui::Dummy() so BLOCK_LI() can continue the line right after it.
+}
 
 void imgui_md::html_div(const std::string& dclass, bool e)
 {
@@ -793,7 +810,7 @@ bool imgui_md::get_image(image_info& nfo) const
 #ifdef IMGUI_HAS_TEXTURES
 	nfo.texture_id = ImGui::GetIO().Fonts->TexID.GetTexID();
 #else
-	nfo.texture_id = ImGui::GetIO().Fonts->TexID;
+    nfo.texture_id = ImGui::GetIO().Fonts->TexID;
 #endif
 	nfo.size = { 100,50 };
 	nfo.uv0 = { 0,0 };
@@ -823,4 +840,9 @@ void imgui_md::soft_break()
 #if 0
 	ImGui::NewLine();
 #endif
+}
+
+float imgui_md::get_table_wrap_width() const
+{
+	return ImGui::GetContentRegionAvail().x;
 }

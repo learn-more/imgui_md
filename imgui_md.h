@@ -52,7 +52,7 @@ protected:
 	virtual void BLOCK_QUOTE(bool);
 	virtual void BLOCK_UL(const MD_BLOCK_UL_DETAIL*, bool);
 	virtual void BLOCK_OL(const MD_BLOCK_OL_DETAIL*, bool);
-	virtual void BLOCK_LI(const MD_BLOCK_LI_DETAIL*, bool);
+	virtual void BLOCK_LI(const MD_BLOCK_LI_DETAIL* d, bool e);
 	virtual void BLOCK_HR(bool e);
 	virtual void BLOCK_H(const MD_BLOCK_H_DETAIL* d, bool e);
 	virtual void BLOCK_CODE(const MD_BLOCK_CODE_DETAIL*, bool);
@@ -110,7 +110,25 @@ protected:
 	//e==true : enter
 	//e==false : leave
 	virtual void html_div(const std::string& dclass, bool e);
+
+	//called once per contiguous, already word-wrapped chunk of literal text, right before its glyphs are drawn
+    //(so an override can paint something - e.g. a selection highlight - behind them first).
+    //[str,str_end) points directly into the buffer passed to print(), which is what makes byte-offset-based text selection possible
+	virtual void text_run(const char* str, const char* str_end, const ImVec2& min, const ImVec2& max);
+
+	//called in place of a task list item's marker ("- [ ] "/"- [x] "), instead of the usual bullet/number, with
+	//the cursor already positioned where the marker should start. An override is expected to both draw the
+	//marker and reserve its own width (e.g. via ImGui::Dummy()) so BLOCK_LI() can lay the item's text out right
+	//after it with SameLine()
+	virtual void render_task_checkbox(bool checked);
+
+	//called by render_text() while wrapping a table header/body cell's text, in place of the full content-region width
+    //used everywhere else. Defaults to that full content-region width; override to return a fixed, table-independent
+    //cap instead (e.g. for a real auto-fit ImGui table implementation, where the column width is still settling).
+	virtual float get_table_wrap_width() const;
 	////////////////////////////////////////////////////////////////////////////
+
+	MD_PARSER m_md;
 
 	//current state
 	std::string m_href;//empty if no link/image
@@ -155,8 +173,6 @@ private:
 	std::vector<list_info> m_list_stack;
 
 	std::vector<std::string> m_div_stack;
-
-	MD_PARSER m_md;
 };
 
 #endif  /* IMGUI_MD_H */
