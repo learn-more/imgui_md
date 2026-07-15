@@ -141,6 +141,16 @@ protected:
 	//e==true : enter
 	//e==false : leave
 	virtual void html_div(const std::string& dclass, bool e);
+
+	//called once per contiguous, already word-wrapped chunk of literal text, right before its glyphs are drawn (so an override can paint
+	//something - e.g. a selection highlight - behind them first). [str,str_end) points directly into the buffer passed to print(), which
+	//is what makes byte-offset-based text selection possible
+	virtual void text_run(const char* str, const char* str_end, const ImVec2& min, const ImVec2& max);
+
+	//called by render_text() while wrapping a table body cell's text, in place of the full content-region width used everywhere else.
+	//Defaults to that full content-region width; override to return a fixed, table-independent cap instead (e.g. for a real auto-fit
+	//ImGui table implementation, where the column width is still settling)
+	virtual float get_table_wrap_width() const;
 	////////////////////////////////////////////////////////////////////////////
 
     virtual void push_code_style();

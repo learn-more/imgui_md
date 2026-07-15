@@ -314,7 +314,9 @@ void imgui_md::render_admonition_header(AdmonitionKind kind)
 }
 
 
-bool Priv_ImGuiNodeEditor_IsInCanvas();  // Forward declaration (hidden API of imgui.cpp, specific to ImGui Bundle)
+// MiniMD patch: this is a hidden API of imgui_bundle's own patched imgui.cpp, not vanilla Dear ImGui - we build against
+// upstream ocornut/imgui standalone, so the real symbol doesn't exist. Stubbed locally instead of just forward-declared.
+static bool Priv_ImGuiNodeEditor_IsInCanvas() { return false; }
 
 void imgui_md::BLOCK_CODE(const MD_BLOCK_CODE_DETAIL* detail, bool e)
 {
@@ -640,7 +642,8 @@ void imgui_md::render_text(const char* str, const char* str_end)
 	// fallback in CalcWordWrapPosition splits inside the first word
 	// (e.g. "D" / "ear ImGui Bundle", or "browser u" / "sing ...").
 	if (!m_is_image && !m_is_table_header && str < str_end) {
-		float wl = ImGui::GetContentRegionAvail().x;
+		// MiniMD patch: inside a table body cell, wrap to get_table_wrap_width() instead - see its doc comment in imgui_md.h.
+		float wl = m_is_table_body ? get_table_wrap_width() : ImGui::GetContentRegionAvail().x;
 		const char* word_start = str;
 		while (word_start < str_end
 		       && (*word_start == ' ' || *word_start == '\t'))
@@ -669,9 +672,9 @@ void imgui_md::render_text(const char* str, const char* str_end)
 		const char* te = str_end;
 
 		if (!m_is_table_header) {
-			// Inside a BeginTable cell, ContentRegionAvail.x is the cell
-			// width; outside a table, it's the window content width.
-			float wl = ImGui::GetContentRegionAvail().x;
+			// Inside a BeginTable cell, ContentRegionAvail.x is the cell width; outside a table, it's the window content width.
+			// MiniMD patch: for a table body cell, get_table_wrap_width() instead - see its doc comment in imgui_md.h.
+			float wl = m_is_table_body ? get_table_wrap_width() : ImGui::GetContentRegionAvail().x;
 			te = ImGui::GetFont()->CalcWordWrapPosition(
 				size, str, str_end, wl);
 			if (te == str) ++te;
@@ -685,6 +688,14 @@ void imgui_md::render_text(const char* str, const char* str_end)
 			saved_y = ImGui::GetCursorPosY();
 			ImGui::SetCursorPosY(saved_y + sub_sup_y_offset);
 			adjusted_y = true;
+		}
+
+		// MiniMD patch: rect this chunk is about to occupy, computed *before* drawing it so an override of text_run() can lay down a
+		// highlight quad first and have the glyphs land on top of it (same draw-order trick ImGui's own InputText uses for selection).
+		{
+			const ImVec2 run_pos = ImGui::GetCursorScreenPos();
+			const ImVec2 run_size = ImGui::CalcTextSize(str, te);
+			text_run(str, te, run_pos, ImVec2(run_pos.x + run_size.x, run_pos.y + run_size.y));
 		}
 
 		// <mark>: draw a highlight rectangle behind the text using
@@ -1146,6 +1157,17 @@ void imgui_md::html_div(const std::string& dclass, bool e)
 	}
 #endif
     (void)dclass; (void)e;
+}
+
+void imgui_md::text_run(const char*, const char*, const ImVec2&, const ImVec2&)
+{
+	//Example: record [str,str_end)/[min,max) somewhere for hit-testing, or draw a highlight
+	//quad via ImGui::GetWindowDrawList()->AddRectFilled(min, max, col) before returning.
+}
+
+float imgui_md::get_table_wrap_width() const
+{
+	return ImGui::GetContentRegionAvail().x;
 }
 
 void imgui_md::render_code_block()
